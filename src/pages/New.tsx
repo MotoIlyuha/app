@@ -4,6 +4,7 @@ import { useStore } from '../shared/state/store'
 export default function NewPage() {
   const channels = useStore(s => s.channels)
   const markChannelRead = useStore(s => s.markChannelRead)
+  const setFocused = useStore(s => s.setFocused)
 
   const unreadChannels = useMemo(() => {
     return Object.values(channels)
@@ -20,7 +21,7 @@ export default function NewPage() {
         <ul style={{ padding: 0, margin: 0, listStyle: 'none' }}>
           {unreadChannels.map(c => (
             <li key={c.id}>
-              <button onClick={() => { console.log('channelId', c.id); markChannelRead(c.id) }} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', padding: '8px 10px', background: 'transparent', border: '1px solid var(--border, #e5e7eb)', borderRadius: 8, marginBottom: 8, cursor: 'pointer' }}>
+              <button onClick={() => { console.log('channelId', c.id); markChannelRead(c.id); setFocused({ channelId: c.id, threadId: undefined }) }} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', padding: '8px 10px', background: 'transparent', border: '1px solid var(--border, #e5e7eb)', borderRadius: 8, marginBottom: 8, cursor: 'pointer' }}>
                 <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.title}</div>
                 <span style={{ fontVariantNumeric: 'tabular-nums' }}>{c.unread > 99 ? '99+' : c.unread}</span>
               </button>

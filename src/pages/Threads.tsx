@@ -5,6 +5,7 @@ export default function ThreadsPage() {
   const threads = useStore(s => s.threads)
   const channels = useStore(s => s.channels)
   const markThreadRead = useStore(s => s.markThreadRead)
+  const setFocused = useStore(s => s.setFocused)
   const [q, setQ] = useState('')
 
   const list = useMemo(() => {
@@ -29,9 +30,9 @@ export default function ThreadsPage() {
         <ul style={{ padding: 0, margin: 0, listStyle: 'none' }}>
           {list.map(t => (
             <li key={t.id}>
-              <button onClick={() => { console.log('threadId', t.id); markThreadRead(t.id) }} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', padding: '8px 10px', background: 'transparent', border: '1px solid var(--border, #e5e7eb)', borderRadius: 8, marginBottom: 8, cursor: 'pointer' }}>
+              <button onClick={() => { console.log('threadId', t.id); markThreadRead(t.id); setFocused({ channelId: t.channelId, threadId: t.id }) }} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', padding: '8px 10px', background: 'transparent', border: '1px solid var(--border, #e5e7eb)', borderRadius: 8, marginBottom: 8, cursor: 'pointer' }}>
                 <div style={{ overflow: 'hidden' }}>
-                  <div style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.title}</div>
+                  <div style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.title} {t.hasMention ? <span title="Есть упоминание">@</span> : null}</div>
                   <div style={{ fontSize: 12, color: 'var(--muted, #6b7280)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{channels[t.channelId]?.title}</div>
                 </div>
                 <span style={{ fontVariantNumeric: 'tabular-nums' }}>{t.unread > 99 ? '99+' : t.unread}</span>

@@ -33,6 +33,8 @@ export interface Actions {
   hideChannel: (id: Id, hidden: boolean) => void;
   setNotifications: (scope: 'channel' | 'thread', id: Id, mode: Channel['notifications']) => void;
   setFocused: (payload: { channelId?: Id; threadId?: Id }) => void;
+  reorderSection: (dragId: Id, overId: Id) => void;
+  reorderChannel: (args: { id: Id; fromSectionId: Id; toSectionId: Id; index: number }) => void;
   startGenerator: () => void;
   stopGenerator: () => void;
 }
@@ -77,6 +79,21 @@ function insertByTsDesc(arr: Id[], id: Id, getTs: (id: Id) => number) {
 function removeFromArray(arr: Id[], id: Id) {
   const i = arr.indexOf(id);
   if (i >= 0) arr.splice(i, 1);
+}
+
+const SPARSE_STEP = 1024;
+
+function computeSparseBetween(before?: number, after?: number): number {
+  const b = typeof before === 'number' ? before : 0;
+  if (typeof after !== 'number') return b + SPARSE_STEP * 2; // tail insert safety margin
+  const mid = Math.floor((b + after) / 2);
+  return mid;
+}
+
+function needReindex(before?: number, after?: number, candidate?: number): boolean {
+  if (typeof before !== 'number' || typeof after !== 'number') return false;
+  if (typeof candidate !== 'number') return true;
+  return !(candidate > before && candidate < after);
 }
 
 function bubbleUnreadToSection(state: EntitiesState, channelId: Id) {
@@ -276,6 +293,99 @@ export const useStore = create<StoreState>()(devtools((set, get) => ({
 
   setFocused: ({ channelId, threadId }) => {
     set((state) => ({ ...state, focusedChannelId: channelId, focusedThreadId: threadId }), false, 'setFocused');
+  },
+
+  reorderSection: (dragId, overId) => {
+    set((state) => {
+      if (!state.sections[dragId] || !state.sections[overId]) return state as StoreState;
+      const next = { ...state } as StoreState;
+      const order = [...next.sectionOrder];
+      const fromIdx = order.indexOf(dragId);
+      const toIdx = order.indexOf(overId);
+      if (fromIdx === -1 || toIdx === -1 || fromIdx === toIdx) return next;
+      order.splice(fromIdx, 1);
+      order.splice(toIdx, 0, dragId);
+
+      // compute new position for dragId
+      const beforeId = order[toIdx - 1];
+      const afterId = order[toIdx + 1];
+      const beforePos = beforeId ? next.sections[beforeId]?.position : undefined;
+      const afterPos = afterId ? next.sections[afterId]?.position : undefined;
+      let pos = computeSparseBetween(beforePos, afterPos);
+
+      if (needReindex(beforePos, afterPos, pos)) {
+        // reindex all sections with sparse grid
+        for (let i = 0; i < order.length; i++) {
+          const id = order[i];
+          const newPos = (i + 1) * SPARSE_STEP;
+          next.sections[id] = { ...next.sections[id], position: newPos } as Section;
+        }
+      } else {
+        next.sections[dragId] = { ...next.sections[dragId], position: pos } as Section;
+      }
+      next.sectionOrder = order;
+      return next;
+    }, false, 'reorderSection');
+  },
+
+  reorderChannel: ({ id, fromSectionId, toSectionId, index }) => {
+    set((state) => {
+      const channel = state.channels[id];
+      if (!channel) return state as StoreState;
+
+      const next = { ...state } as StoreState;
+      // ensure arrays exist
+      if (!next.channelsBySection[fromSectionId]) next.channelsBySection[fromSectionId] = [];
+      if (!next.channelsBySection[toSectionId]) next.channelsBySection[toSectionId] = [];
+
+      // remove from source
+      const src = [...next.channelsBySection[fromSectionId]];
+      removeFromArray(src, id);
+      next.channelsBySection[fromSectionId] = src;
+
+      // insert into target at index
+      const dst = [...next.channelsBySection[toSectionId]];
+      const clampedIndex = Math.max(0, Math.min(index, dst.length));
+      dst.splice(clampedIndex, 0, id);
+
+      // compute new sparse position
+      const beforeId = dst[clampedIndex - 1];
+      const afterId = dst[clampedIndex + 1];
+      const beforePos = beforeId ? next.channels[beforeId]?.position : undefined;
+      const afterPos = afterId ? next.channels[afterId]?.position : undefined;
+      let pos = computeSparseBetween(beforePos, afterPos);
+
+      // if not enough space, reindex only target section then recompute
+      if (needReindex(beforePos, afterPos, pos)) {
+        for (let i = 0; i < dst.length; i++) {
+          const cid = dst[i];
+          const newPos = (i + 1) * SPARSE_STEP;
+          next.channels[cid] = { ...next.channels[cid], position: newPos } as Channel;
+        }
+        // after reindex, set pos according to inserted index
+        pos = (clampedIndex + 1) * SPARSE_STEP;
+      }
+
+      // update channel
+      const prevSectionId = channel.sectionId || fromSectionId;
+      const updated: Channel = { ...channel, sectionId: toSectionId, position: pos } as Channel;
+      next.channels = { ...next.channels, [id]: updated };
+
+      // update lists
+      next.channelsBySection[toSectionId] = dst;
+      // maintain section.channelIds references for convenience
+      if (next.sections[toSectionId]) next.sections[toSectionId].channelIds = dst;
+      if (next.sections[fromSectionId]) next.sections[fromSectionId].channelIds = next.channelsBySection[fromSectionId];
+
+      // adjust unread sums across sections if moved
+      if (prevSectionId !== toSectionId) {
+        const unread = channel.unread || 0;
+        if (next.sections[prevSectionId]) next.sections[prevSectionId].unread = Math.max(0, (next.sections[prevSectionId].unread || 0) - unread);
+        if (next.sections[toSectionId]) next.sections[toSectionId].unread = (next.sections[toSectionId].unread || 0) + unread;
+      }
+
+      return next;
+    }, false, 'reorderChannel');
   },
 
   startGenerator: () => {
